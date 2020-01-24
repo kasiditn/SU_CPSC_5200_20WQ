@@ -90,6 +90,14 @@ namespace restapi.Models
                         Reference = $"/timesheets/{UniqueIdentifier}/lines"
                     });
 
+                    links.Add(new ActionLink()
+                    {
+                        Method = Method.Delete,
+                        Type = ContentTypes.Deletion,
+                        Relationship = ActionRelationship.Delete,
+                        Reference = $"/timesheets/{UniqueIdentifier}/deletion"
+                    });
+
                     break;
 
                 case TimecardStatus.Submitted:
@@ -124,7 +132,13 @@ namespace restapi.Models
                     break;
 
                 case TimecardStatus.Cancelled:
-                    // terminal state, nothing possible here
+                    links.Add(new ActionLink()
+                    {
+                        Method = Method.Delete,
+                        Type = ContentTypes.Deletion,
+                        Relationship = ActionRelationship.Delete,
+                        Reference = $"/timesheets/{UniqueIdentifier}/deletion"
+                    });
                     break;
             }
 
@@ -176,7 +190,25 @@ namespace restapi.Models
 
             return annotatedLine;
         }
-
+         public TimecardLine UpdateLine(DocumentLine documentLine, Guid lineId)        
+        {            
+            var updatedLine = Lines.Single(l => l.UniqueIdentifier == lineId);
+            if (updatedLine != null)            
+            {                
+                return updatedLine.Update(documentLine);            
+            }   
+                     
+            else            
+            {               
+                return null;            
+            }       
+        }
+        public void RemoveLine(Guid lineId)       
+        {
+            Lines.Remove(Lines.Single(l => l.UniqueIdentifier == lineId));        
+        }
+        
+       
         public bool CanBeDeleted()
         {
             return (Status == TimecardStatus.Cancelled || Status == TimecardStatus.Draft);

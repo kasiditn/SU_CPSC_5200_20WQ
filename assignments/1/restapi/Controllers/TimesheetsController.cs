@@ -68,10 +68,17 @@ namespace restapi.Controllers
             return timecard;
         }
 
-        [HttpDelete("{id:guid}")]
+        /**
+         * Remove (DELETE) a draft or cancelled timecard: 
+         * This function implements Delete by changing the state to deletion. Does not 
+         * delete from the database entirely.
+         */
+        [HttpDelete("{id:guid}/deletion")]
+        [Produces(ContentTypes.Deletion)]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
-        public IActionResult Delete(Guid id)
+        [ProducesResponseType(typeof(InvalidStateError), 409)]
+        public IActionResult Delete(Guid id, [FromBody] Deletion deletion)
         {
             logger.LogInformation($"Looking for timesheet {id}");
 
@@ -87,9 +94,15 @@ namespace restapi.Controllers
                 return StatusCode(409, new InvalidStateError() { });
             }
 
+            var transition = new Transition(deletion, TimecardStatus.Deleted);
+
+            logger.LogInformation($"Deleting timesheet {transition}");
+
+            timecard.Transitions.Add(transition);
+
             repository.Delete(id);
 
-            return Ok();
+            return Ok(transition);
         }
 
         [HttpGet("{id:guid}/lines")]
@@ -126,7 +139,7 @@ namespace restapi.Controllers
             logger.LogInformation($"Looking for timesheet {id}");
 
             Timecard timecard = repository.Find(id);
-
+            
             if (timecard != null)
             {
                 if (timecard.Status != TimecardStatus.Draft)
@@ -145,20 +158,82 @@ namespace restapi.Controllers
                 return NotFound();
             }
         }
-
-        [HttpGet("{id:guid}/transitions")]
-        [Produces(ContentTypes.Transitions)]
-        [ProducesResponseType(typeof(IEnumerable<Transition>), 200)]
+        
+        /**
+         * Replace (POST) a complete line item:
+         * Replace the timecard form the given id 
+         */
+        [HttpPost("{id:guid}/lines/{lineId:guid}")]
+        [Produces(ContentTypes.TimesheetLine)]
+        [ProducesResponseType(typeof(TimecardLine), 200)]
         [ProducesResponseType(404)]
-        public IActionResult GetTransitions(Guid id)
+        [ProducesResponseType(typeof(InvalidStateError), 409)]
+         [ProducesResponseType(typeof(LineNotFoundError), 409)]
+        public IActionResult ReplaceLine(Guid id, [FromBody] DocumentLine newLine, Guid lineId)
         {
-            logger.LogInformation($"Looking for timesheet {id}");
+            logger.LogInformation($"Looking for timesheet {id} , line {lineId} ");
 
             Timecard timecard = repository.Find(id);
 
+            if (timecard == null)
+            {
+                return NotFound();
+            } 
+
             if (timecard != null)
             {
-                return Ok(timecard.Transitions);
+                if (timecard.Status != TimecardStatus.Draft)
+                {
+                    return StatusCode(409, new InvalidStateError() { });
+                }
+
+                timecard.RemoveLine(lineId);
+
+                var replaceLine = timecard.AddLine(newLine);
+
+                repository.Update(timecard);
+
+                return Ok(replaceLine);
+            }
+            else
+            {
+                return NotFound();
+            }
+        }
+
+        /**
+         * Update (PATCH) a line item:
+         * update timecardline from the given id 
+         */
+        [HttpPatch("{id:guid}/lines/{lineId:guid}")]
+        [Produces(ContentTypes.TimesheetLine)]
+        [ProducesResponseType(typeof(TimecardLine), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(typeof(InvalidStateError), 409)]
+        public IActionResult UpdateLine(Guid timecardId, 
+        [FromBody] DocumentLine newLine, Guid lineId)
+        {
+            logger.LogInformation($"Looking for timesheet {timecardId} , line {lineId} ");
+
+            Timecard timecard = repository.Find(timecardId);
+            
+            if (timecard == null)
+            {
+                return NotFound();
+            }
+
+            if (timecard != null)
+            {
+                if (timecard.Status != TimecardStatus.Draft)
+                {
+                    return StatusCode(409, new InvalidStateError() { });
+                }
+
+                var updateLine = timecard.UpdateLine(newLine, lineId);
+
+                repository.Update(timecard);
+
+                return Ok(updateLine);
             }
             else
             {
